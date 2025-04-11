@@ -1,0 +1,56 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+
+# Flutter generated files
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.metadata
+.dart_tool/
+build/
+
+# Android Studio/IntelliJ files
+.idea/
+*.iml
+*.ipr
+*.iws
+# Android generated files
+android/.gradle/
+android/app/build/
+android/build/
+# Retain android/app/src/main/AndroidManifest.xml
+# Keep generated plugins register
+# android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+# Note: It is recommended to check this file into source control.
+
+# Xcode generated files
+ios/Pods/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Generated.xcconfig
+ios/.symlinks/
+ios/Runner/GeneratedPluginRegistrant.*
+
+# VS Code files
+.vscode/
+
+# Secrets (add your own secret files here if any)
+# secrets.json
+# google-services.json # Usually sensitive, consider gitignoring if public repo
+# local.properties # Contains SDK path, should be ignored
+
+# Windows specific
+Thumbs.db
+
+# Crashlytics generated files
+crashlytics.properties
+crashlytics-build.properties
+fabric.properties
