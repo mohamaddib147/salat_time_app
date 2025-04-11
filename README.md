@@ -192,14 +192,10 @@ This project uses the **`provider` package** for state management, specifically 
 
 ---
 
-## Configuration
+## Configuration      
 
 *   **Location Permissions:** As detailed in the Setup section, ensure the necessary permissions are added to the native configuration files (`AndroidManifest.xml` and `Info.plist`). The app will request these permissions at runtime when location is needed.
 *   **Calculation Method:** The default calculation method is hardcoded (currently ISNA, ID=2) in `prayer_times_provider.dart`. This could be made configurable via a settings screen in the future.
 *   **Asr Juristic Method (School):** The default is hardcoded (currently Standard, ID=0). This could also be made configurable.
 
 ---
-
-## License
-
-[Specify License Here - e.g., MIT, Apache 2.0, etc.]
