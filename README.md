@@ -17,11 +17,15 @@ Current highlights:
 *   Daily prayers (Fajr, Dhuhr, Asr, Maghrib, Isha) with per‑prayer time offsets
 *   Time format toggle (12/24h)
 *   Home screen widget: next prayer name + live countdown (updates every minute)
+    - Recomputes the next prayer locally every minute from saved, adjusted times
+    - Stores UTC epoch for precise countdown across timezones/DST
 *   Adhan at prayer time in the background via exact alarms (Android)
-*   High‑importance notification with STOP action when Adhan plays
+    - Notification appears first, then Adhan plays
+    - STOP action on the notification stops audio and clears the notification
 *   In‑app actions: Check Permissions, Test Adhan (1 min), Update Home Widget
 *   Per‑prayer Adhan enable/disable and audio selection; preview Test per prayer
 *   UTC‑based time handling for reliable next‑prayer logic across DST/timezones
+*   Daily rescheduler at 00:05 to auto‑set a new day’s alarms
 *   Provider state management with persistence (`shared_preferences`)
 
 ## Future Enhancements (Potential Ideas)
@@ -64,6 +68,8 @@ salat_time/
 │ ├── home_screen_new.dart # Alternative tabbed Home (Prayer/Quran)
 │ └── prayer_times_provider.dart # State management, business logic, API calls
 │ └── services/ # Audio, notifications, scheduling, widget data, permissions
+├── android/app/src/main/java/.../NextPrayerWidgetProvider.java # Widget provider
+├── android/app/src/main/res/layout/widget_next_prayer.xml # Widget layout
 ├── test/ # Unit and widget tests (if any)
 ├── pubspec.yaml # Project metadata and dependencies
 └── README.md # This file
@@ -137,11 +143,17 @@ salat_time/
 
 ### Background Adhan, Notifications, and Widget
 
-* `lib/services/prayer_time_scheduler.dart`: Schedules exact alarms for the five daily prayers and periodic widget refresh; background callback shows a high‑importance notification (with STOP action) then plays Adhan.
-* `lib/services/notification_service.dart`: Initializes and displays notifications; handles STOP action in foreground/background.
+* `lib/services/prayer_time_scheduler.dart`: Schedules exact alarms for the five daily prayers and periodic widget refresh; background callback shows a high‑importance notification (with STOP action) then plays Adhan. Includes a daily rescheduler around 00:05.
+* `lib/services/notification_service.dart`: Initializes and displays notifications; handles STOP action in foreground/background; auto‑cancels the notification when playback stops/completes.
 * `lib/services/audio_service.dart`: Plays Adhan audio (per‑prayer enable and file selection); inline preview for Test buttons.
-* `lib/services/widget_data_service.dart`: Computes next prayer and persists UTC epoch/name/countdown for the widget; standardizes on UTC for reliability.
-* `android/app/src/main/java/.../NextPrayerWidgetProvider.java`: Android widget provider rendering and minute‑tick updates; reads saved UTC epoch and shows a live countdown.
+* `lib/services/widget_data_service.dart`: Computes next prayer, persists UTC epoch/name/countdown, and saves adjusted five prayer times for the widget; standardized on UTC.
+* `android/app/src/main/java/.../NextPrayerWidgetProvider.java`: Android widget provider rendering and minute‑tick updates; recomputes next prayer locally from saved times each minute, uses UTC epoch for countdown, and refreshes if stale.
+
+Widget storage keys (Android HomeWidgetPreferences):
+- `widget_next_prayer_name`
+- `widget_next_prayer_countdown`
+- `widget_next_prayer_epoch` (UTC epoch millis as string)
+- `widget_times_json` (JSON of today’s adjusted times {Fajr,Dhuhr,Asr,Maghrib,Isha}: "HH:mm")
 
 ---
 
@@ -195,6 +207,7 @@ This project uses the **`provider` package** for state management, specifically 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     ```
     The app requests runtime notification permission. On Android 12+, enable "Exact alarms" for reliable background Adhan scheduling.
+    - Recommended: Disable battery optimization for the app so alarms/notifications are timely.
     *   **iOS:** Edit `ios/Runner/Info.plist` and add the following keys/strings inside the main `<dict>` tag:
         ```xml
         <key>NSLocationWhenInUseUsageDescription</key>
@@ -234,12 +247,13 @@ This project uses the **`provider` package** for state management, specifically 
 
 ### Home Widget
 * Shows next prayer and a live countdown.
-* Updates every minute; tap any widget text to open the app.
+* Updates every minute; recomputes from stored times; tap any widget text to open the app.
 * Menu → "Update Home Widget" to push an immediate refresh.
 
 ### Background Adhan & Notification
-* The app schedules exact alarms for each prayer and plays Adhan even if the app is closed.
-* When a prayer triggers, a high‑importance notification appears first, then Adhan starts; tap STOP to stop playback.
+* The app schedules exact, allow‑while‑idle alarms for each prayer and plays Adhan even if the app is closed.
+* When a prayer triggers, a high‑importance notification appears first, then Adhan starts.
+* Tap the STOP action to stop playback (the notification auto‑clears), or dismiss/tap to stop as well.
 
 ### Quick Test
 * AppBar menu → "Test Adhan (1 min)"; press Home. After ~1 minute you should see a notification and hear the Adhan.
@@ -250,6 +264,7 @@ This project uses the **`provider` package** for state management, specifically 
 
 ## Troubleshooting
 
-* Adhan only when app is open: Grant notification permission; on Android 12+ allow Exact alarms; disable battery optimization for the app; check media volume and DND.
-* Widget stuck on Fajr: Wait up to a minute or use "Update Home Widget"; ensure location is set; UTC handling prevents DST/timezone drift.
+* Adhan only when app is open: Grant notification permission; on Android 12+ allow Exact alarms; disable battery optimization; check media volume and DND.
+* Widget stuck on the first prayer: Tap "Update Home Widget" once to seed today’s adjusted times; wait up to a minute for recompute. Ensure date/timezone are correct.
+* New day not updating: The daily rescheduler runs around 00:05 to set new alarms; opening the app also refreshes.
 * No notification sound: The app plays audio via `just_audio` and shows a notification without sound; use the STOP action to stop.
