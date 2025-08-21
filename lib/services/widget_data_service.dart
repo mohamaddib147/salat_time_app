@@ -21,6 +21,7 @@ class WidgetDataService {
   static const String keyNextPrayerName = 'widget_next_prayer_name';
   static const String keyNextPrayerCountdown = 'widget_next_prayer_countdown';
   static const String keyNextPrayerEpoch = 'widget_next_prayer_epoch'; // milliseconds since epoch as String
+  static const String keyTimesJson = 'widget_times_json'; // JSON map of adjusted five prayer times HH:mm
 
   // Compute next prayer using PrayerTimesProvider logic and persist for widgets
   static Future<void> updateNextPrayerData([PrayerTimesProvider? provider]) async {
@@ -104,6 +105,38 @@ class WidgetDataService {
       // Store epoch as string to avoid platform int size limits; use UTC epoch
       await prefs.setString(keyNextPrayerEpoch, nextUtc.millisecondsSinceEpoch.toString());
 
+      // Also persist today's adjusted five prayer times (HH:mm, 24h) so the native widget
+      // can compute the next prayer locally each minute without extra network calls.
+      final Map<String, String> adjustedTimes = {};
+      final Map<String, dynamic>? rawTimes = provider?.prayerTimes;
+      final Map<String, int> offs = provider?.prayerOffsets ?? const {
+        'Fajr': 0, 'Dhuhr': 0, 'Asr': 0, 'Maghrib': 0, 'Isha': 0,
+      };
+      if (rawTimes != null) {
+        final nowLocal = DateTime.now();
+        final todayLocal = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
+        for (final p in const ['Fajr','Dhuhr','Asr','Maghrib','Isha']) {
+          final v = rawTimes[p];
+          if (v == null) continue;
+          try {
+            final parts = v.toString().split(':');
+            if (parts.length < 2) continue;
+            var h = int.parse(parts[0].replaceAll(RegExp(r'[^0-9]'), ''));
+            final m = int.parse(parts[1].replaceAll(RegExp(r'[^0-9]'), ''));
+            // Build local DateTime, apply per-prayer offset, then format back to HH:mm 24h
+            var dt = todayLocal.add(Duration(hours: h, minutes: m));
+            dt = dt.add(Duration(minutes: offs[p] ?? 0));
+            h = dt.hour; // after offset
+            final mm = dt.minute;
+            adjustedTimes[p] = '${h.toString().padLeft(2, '0')}:${mm.toString().padLeft(2, '0')}' ;
+          } catch (_) {}
+        }
+        if (adjustedTimes.isNotEmpty) {
+          await prefs.setString(keyTimesJson, jsonEncode(adjustedTimes));
+          await HomeWidget.saveWidgetData<String>(keyTimesJson, jsonEncode(adjustedTimes));
+        }
+      }
+
       await _saveForWidget(nextName, countdown,
         epochMillis: nextUtc.millisecondsSinceEpoch);
     } catch (_) {
@@ -149,6 +182,55 @@ class WidgetDataService {
     }
     
     // If no prayer found today, next is tomorrow's Fajr
+    if (nextName == null) {
+      final fajr = times['Fajr']?.toString();
+      if (fajr != null) {
+        try {
+          final parts = fajr.split(':');
+          if (parts.length >= 2) {
+            final h = int.parse(parts[0]);
+            final m = int.parse(parts[1].replaceAll(RegExp(r'[^0-9]'), ''));
+            var tomorrowLocal = todayLocal.add(const Duration(days: 1));
+            var dtLocal = tomorrowLocal.add(Duration(hours: h, minutes: m));
+            dtLocal = dtLocal.add(Duration(minutes: offsets['Fajr'] ?? 0));
+            nextName = 'Fajr';
+            nextTime = dtLocal.toUtc();
+          }
+        } catch (_) {}
+      }
+    }
+    return (nextName, nextTime);
+  }
+
+  // Visible for unit tests: same logic as _computeNextFromTimings but with injectable nowUtc/nowLocal
+  static (String?, DateTime?) computeNextFromTimingsForTest(
+    Map<String, dynamic> times,
+    Map<String, int> offsets, {
+    required DateTime nowUtc,
+    required DateTime nowLocal,
+  }) {
+    final todayLocal = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
+    String? nextName;
+    DateTime? nextTime;
+    const order = ['Fajr','Dhuhr','Asr','Maghrib','Isha'];
+    for (final prayer in order) {
+      final value = times[prayer];
+      if (value == null) continue;
+      try {
+        final parts = value.toString().split(':');
+        if (parts.length < 2) continue;
+        final h = int.parse(parts[0]);
+        final m = int.parse(parts[1].replaceAll(RegExp(r'[^0-9]'), ''));
+        var dtLocal = todayLocal.add(Duration(hours: h, minutes: m));
+        dtLocal = dtLocal.add(Duration(minutes: offsets[prayer] ?? 0));
+        final dtUtc = dtLocal.toUtc();
+        if (dtUtc.isAfter(nowUtc.add(const Duration(seconds: 30)))) {
+          nextName = prayer;
+          nextTime = dtUtc;
+          break;
+        }
+      } catch (_) {}
+    }
     if (nextName == null) {
       final fajr = times['Fajr']?.toString();
       if (fajr != null) {

@@ -22,6 +22,7 @@ class NotificationService {
   NotificationService._internal();
 
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  bool _listeningToAudio = false;
 
   Future<void> init() async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -31,6 +32,18 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onDidReceiveNotificationResponse,
   onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
+
+    // Observe audio playback to auto-cancel notification when playback stops/completes
+    if (!_listeningToAudio) {
+      _listeningToAudio = true;
+      AudioService().isPlaying.addListener(() async {
+        if (!AudioService().isPlaying.value) {
+          try {
+            await _plugin.cancel(1001);
+          } catch (_) {}
+        }
+      });
+    }
   }
 
   static void _onDidReceiveNotificationResponse(NotificationResponse response) async {
@@ -41,6 +54,7 @@ class NotificationService {
           response.notificationResponseType == NotificationResponseType.selectedNotification ||
           response.notificationResponseType == NotificationResponseType.selectedNotificationAction) {
         await AudioService().stop();
+  try { await NotificationService().cancelAdhanNotification(); } catch (_) {}
       }
     } catch (e) {
       // Silent fail
@@ -75,6 +89,12 @@ class NotificationService {
       'It\'s time for $prayerName prayer',
       details,
     );
+  }
+
+  Future<void> cancelAdhanNotification() async {
+    try {
+      await _plugin.cancel(1001);
+    } catch (_) {}
   }
 
 }

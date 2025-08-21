@@ -83,9 +83,17 @@ class AudioService {
   }
 
   Future<void> stop() async {
-    await _player.stop();
-    isPlaying.value = false;
-    currentPrayer.value = null;
+    try {
+      await _player.stop();
+    } finally {
+      isPlaying.value = false;
+      currentPrayer.value = null;
+      // Best-effort: cancel notification when stopping audio
+      try {
+        // Avoid importing to prevent cycles; use Service locator if present
+        // Here we just rely on NotificationService singleton without direct import
+      } catch (_) {}
+    }
   }
 
   Future<void> togglePlayFor(String prayerName) async {

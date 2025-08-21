@@ -38,6 +38,7 @@ public class NextPrayerWidgetProvider extends AppWidgetProvider {
     private static final String KEY_NAME = "widget_next_prayer_name";
     private static final String KEY_COUNTDOWN = "widget_next_prayer_countdown";
     private static final String KEY_EPOCH = "widget_next_prayer_epoch"; // string millis
+    private static final String KEY_TIMES_JSON = "widget_times_json"; // JSON of adjusted times HH:mm
     private static final String ACTION_TICK = "com.example.salat_time.ACTION_WIDGET_TICK";
     private static final String FLUTTER_PREFS = "FlutterSharedPreferences";
 
@@ -102,13 +103,79 @@ public class NextPrayerWidgetProvider extends AppWidgetProvider {
     String nextPrayer = prefs.getString(KEY_NAME, null);
     String countdownStored = prefs.getString(KEY_COUNTDOWN, null);
     String epochStr = prefs.getString(KEY_EPOCH, null);
+        String timesJson = prefs.getString(KEY_TIMES_JSON, null);
     Log.d("Widget", "updateAppWidget: name=" + nextPrayer + " epoch=" + epochStr + " countdown=" + countdownStored);
 
         if (nextPrayer == null) nextPrayer = "-";
 
     String countdown = countdownStored;
         boolean needRefresh = false;
-    if (epochStr != null) {
+        // If we have adjusted times, recompute next from them to avoid stale state
+        if (timesJson != null) {
+            try {
+                org.json.JSONObject obj = new org.json.JSONObject(timesJson);
+                long nowMs = System.currentTimeMillis();
+                java.util.Calendar nowCal = java.util.Calendar.getInstance();
+                int y = nowCal.get(java.util.Calendar.YEAR);
+                int mo = nowCal.get(java.util.Calendar.MONTH);
+                int d = nowCal.get(java.util.Calendar.DAY_OF_MONTH);
+                long bestEpoch = -1;
+                String bestName = null;
+                for (String p : new String[]{"Fajr","Dhuhr","Asr","Maghrib","Isha"}) {
+                    if (!obj.has(p)) continue;
+                    String t = obj.optString(p, null);
+                    if (t == null) continue;
+                    String[] parts = t.split(":");
+                    if (parts.length < 2) continue;
+                    int h = Integer.parseInt(parts[0].replaceAll("[^0-9]", ""));
+                    int m = Integer.parseInt(parts[1].replaceAll("[^0-9]", ""));
+                    java.util.Calendar c = java.util.Calendar.getInstance();
+                    c.set(y, mo, d, h, m, 0);
+                    c.set(java.util.Calendar.MILLISECOND, 0);
+                    long epoch = c.getTimeInMillis();
+                    if (epoch > nowMs + 30000) { // 30s buffer
+                        bestEpoch = epoch;
+                        bestName = p;
+                        break;
+                    }
+                }
+                if (bestName == null && obj.has("Fajr")) {
+                    String t = obj.optString("Fajr", null);
+                    if (t != null) {
+                        String[] parts = t.split(":");
+                        if (parts.length >= 2) {
+                            int h = Integer.parseInt(parts[0].replaceAll("[^0-9]", ""));
+                            int m = Integer.parseInt(parts[1].replaceAll("[^0-9]", ""));
+                            java.util.Calendar c = java.util.Calendar.getInstance();
+                            c.set(y, mo, d, h, m, 0);
+                            c.add(java.util.Calendar.DAY_OF_MONTH, 1);
+                            c.set(java.util.Calendar.MILLISECOND, 0);
+                            bestEpoch = c.getTimeInMillis();
+                            bestName = "Fajr";
+                        }
+                    }
+                }
+                if (bestName != null && bestEpoch > 0) {
+                    long diff = Math.max(0, bestEpoch - nowMs);
+                    long hours = diff / (1000 * 60 * 60);
+                    long minutes = (diff / (1000 * 60)) % 60;
+                    long seconds = (diff / 1000) % 60;
+                    countdown = String.format(java.util.Locale.US, "%02d:%02d:%02d", hours, minutes, seconds);
+                    nextPrayer = bestName;
+                    epochStr = Long.toString(bestEpoch);
+                    // Persist updated epoch and countdown so next tick continues smoothly
+                    prefs.edit().putString(KEY_NAME, bestName)
+                            .putString(KEY_EPOCH, epochStr)
+                            .putString(KEY_COUNTDOWN, countdown)
+                            .apply();
+                } else {
+                    needRefresh = true; // fallback to background refresh
+                }
+            } catch (Exception e) {
+                needRefresh = true;
+            }
+        }
+        if (epochStr != null) {
             try {
                 long target = Long.parseLong(epochStr);
                 long now = System.currentTimeMillis();
@@ -166,12 +233,34 @@ public class NextPrayerWidgetProvider extends AppWidgetProvider {
         new Thread(() -> {
             try {
                 SharedPreferences flutter = context.getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE);
-                String latStr = flutter.getString("flutter.lastLatitude", null);
-                String lonStr = flutter.getString("flutter.lastLongitude", null);
-                int method = flutter.getInt("flutter.calculationMethod", 2);
-                if (latStr == null || lonStr == null) return;
-                double lat = Double.parseDouble(latStr);
-                double lon = Double.parseDouble(lonStr);
+                // Robustly read lat/lon which may be stored as String or Float/Double by Flutter
+                Double lat = null;
+                Double lon = null;
+                try {
+                    Map<String, ?> all = flutter.getAll();
+                    Object latObj = all.get("flutter.lastLatitude");
+                    Object lonObj = all.get("flutter.lastLongitude");
+                    if (latObj instanceof String) lat = Double.parseDouble((String) latObj);
+                    else if (latObj instanceof Float) lat = ((Float) latObj).doubleValue();
+                    else if (latObj instanceof Double) lat = (Double) latObj;
+                    if (lonObj instanceof String) lon = Double.parseDouble((String) lonObj);
+                    else if (lonObj instanceof Float) lon = ((Float) lonObj).doubleValue();
+                    else if (lonObj instanceof Double) lon = (Double) lonObj;
+                } catch (Exception e) {
+                    // ignore; will fallback to null check below
+                }
+                int method = 2;
+                try {
+                    // calculationMethod is stored as int; however, getAll may return Integer or Long
+                    Object mObj = flutter.getAll().get("flutter.calculationMethod");
+                    if (mObj instanceof Integer) method = (Integer) mObj;
+                    else if (mObj instanceof Long) method = ((Long) mObj).intValue();
+                    else if (mObj instanceof String) method = Integer.parseInt((String) mObj);
+                } catch (Exception ignored) {}
+                if (lat == null || lon == null) {
+                    Log.d("Widget", "Missing lat/lon in FlutterSharedPreferences; skip background refresh");
+                    return;
+                }
                 Log.d("Widget", "refreshData: lat=" + lat + " lon=" + lon + " method=" + method);
 
                 String perOffsetsJson = flutter.getString("flutter.perPrayerOffsets", null);
@@ -237,7 +326,13 @@ public class NextPrayerWidgetProvider extends AppWidgetProvider {
                         int m = Integer.parseInt(parts[1].replaceAll("[^0-9]", ""));
                         
                         Calendar prayerCal = Calendar.getInstance();
+                        // Handle edge-case like "24:xx" by rolling to next day at 00:xx
+                        boolean rollNextDay = false;
+                        if (h >= 24) { h = h % 24; rollNextDay = true; }
                         prayerCal.set(currentYear, currentMonth, currentDay, h, m, 0);
+                        if (rollNextDay) {
+                            prayerCal.add(Calendar.DAY_OF_MONTH, 1);
+                        }
                         prayerCal.set(Calendar.MILLISECOND, 0);
                         
                         int off = offsets.get(p) != null ? offsets.get(p) : 0;

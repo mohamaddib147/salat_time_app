@@ -2,6 +2,7 @@ import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'audio_service.dart';
 import 'notification_service.dart';
 import 'widget_data_service.dart';
@@ -20,6 +21,39 @@ Future<void> adhanCallback(int id) async {
   // Show notification first (so user sees it), then play Adhan
   await NotificationService().showAdhanNotification(prayerName);
   await AudioService().playAdhanFor(prayerName);
+
+    // Ensure the rest of today's alarms remain scheduled and schedule next-day refresh
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lat = prefs.getDouble('lastLatitude');
+      final lon = prefs.getDouble('lastLongitude');
+      final method = prefs.getInt('calculationMethod') ?? 2;
+      Map<String, int> offsets = {
+        'Fajr': 0, 'Dhuhr': 0, 'Asr': 0, 'Maghrib': 0, 'Isha': 0,
+      };
+      final perPrayerJson = prefs.getString('perPrayerOffsets');
+      if (perPrayerJson != null) {
+        try {
+          final decoded = json.decode(perPrayerJson);
+          if (decoded is Map) {
+            for (final p in ['Fajr','Dhuhr','Asr','Maghrib','Isha']) {
+              final v = decoded[p];
+              if (v is int) offsets[p] = v; else if (v is String) offsets[p] = int.tryParse(v) ?? 0;
+            }
+          }
+        } catch (_) {}
+      }
+      if (lat != null && lon != null) {
+        await PrayerTimeScheduler.scheduleForToday(
+          latitude: lat,
+          longitude: lon,
+          calculationMethod: method,
+          prayerOffsets: offsets,
+          notificationsEnabled: true,
+        );
+      }
+      await PrayerTimeScheduler.scheduleDailyReschedule();
+    } catch (_) {}
   } catch (e) {
     // Silent fail in background
   }
@@ -33,6 +67,8 @@ Future<void> widgetRefreshCallback() async {
     await WidgetDataService.updateNextPrayerData();
   // Schedule next refresh
   await PrayerTimeScheduler.scheduleWidgetRefresh();
+  // Also ensure daily reschedule is set
+  await PrayerTimeScheduler.scheduleDailyReschedule();
   } catch (_) {}
 }
 
@@ -63,6 +99,8 @@ String? _prayerNameFromId(int id) {
 class PrayerTimeScheduler {
   static Future<void> initialize() async {
     await AndroidAlarmManager.initialize();
+  // Ensure we have a daily rescheduler in place
+  await scheduleDailyReschedule();
   }
 
   // Schedules alarms for today based on coordinates and calc method
@@ -160,4 +198,60 @@ class PrayerTimeScheduler {
       );
     } catch (_) {}
   }
+
+  // Schedules a daily callback slightly after midnight to (re-)schedule the new day's alarms
+  static Future<void> scheduleDailyReschedule() async {
+    try {
+      final now = DateTime.now();
+      final tomorrow = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+      // Schedule at 00:05 local time to avoid day boundary race
+      final at = DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 5);
+      await AndroidAlarmManager.oneShotAt(
+        at,
+        2997,
+        _dailyRescheduleCallback,
+        exact: true,
+        wakeup: true,
+        rescheduleOnReboot: true,
+        allowWhileIdle: true,
+      );
+    } catch (_) {}
+  }
+}
+
+// Background entry point to reschedule today's alarms using stored prefs
+@pragma('vm:entry-point')
+Future<void> _dailyRescheduleCallback() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final lat = prefs.getDouble('lastLatitude');
+    final lon = prefs.getDouble('lastLongitude');
+    final method = prefs.getInt('calculationMethod') ?? 2;
+    Map<String, int> offsets = {
+      'Fajr': 0, 'Dhuhr': 0, 'Asr': 0, 'Maghrib': 0, 'Isha': 0,
+    };
+    final perPrayerJson = prefs.getString('perPrayerOffsets');
+    if (perPrayerJson != null) {
+      try {
+        final decoded = json.decode(perPrayerJson);
+        if (decoded is Map) {
+          for (final p in ['Fajr','Dhuhr','Asr','Maghrib','Isha']) {
+            final v = decoded[p];
+            if (v is int) offsets[p] = v; else if (v is String) offsets[p] = int.tryParse(v) ?? 0;
+          }
+        }
+      } catch (_) {}
+    }
+    if (lat != null && lon != null) {
+      await PrayerTimeScheduler.scheduleForToday(
+        latitude: lat,
+        longitude: lon,
+        calculationMethod: method,
+        prayerOffsets: offsets,
+        notificationsEnabled: true,
+      );
+    }
+    // Reschedule again for the next day
+    await PrayerTimeScheduler.scheduleDailyReschedule();
+  } catch (_) {}
 }
