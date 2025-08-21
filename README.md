@@ -1,6 +1,6 @@
 # Salat Time - Prayer Times Flutter App
 
-A simple yet functional Flutter application designed to provide Muslims with accurate daily prayer (Salat) times based on their location. The app can fetch times using the device's GPS or by manually entering a city name.
+A polished Flutter app that shows accurate daily prayer (Salat) times, plays Adhan at prayer time with a notification, and provides a home screen widget with the next prayer and countdown. Fetch times by GPS or manual city input.
 
 **(Optional: Add Screenshots Here)**
 <!-- ![Screenshot 1](link/to/screenshot1.png) -->
@@ -10,39 +10,44 @@ A simple yet functional Flutter application designed to provide Muslims with acc
 
 ## Features
 
-*   **Splash Screen:** Simple introductory screen displaying the app name on launch.
-*   **Automatic Location Detection:** Uses the device's GPS to fetch precise prayer times for the current location (`geolocator` package).
-*   **Manual Location Input:** Allows users to enter a city name (optionally with country) to fetch prayer times.
-*   **Recent Locations:** Stores and displays the last 3 manually searched locations for quick access (`shared_preferences`).
-*   **Daily Prayer Times Display:** Shows the calculated times for Fajr, Sunrise, Dhuhr, Asr, Maghrib, and Isha.
-*   **Time Formatting Toggle:** Users can switch between 12-hour (AM/PM) and 24-hour time formats. Preference is saved (`shared_preferences`, `intl`).
-*   **API Integration:** Fetches prayer times from the reliable [Al Adhan API](https://aladhan.com/prayer-times-api).
-*   **State Management:** Uses the `provider` package for managing application state effectively.
-*   **Basic Error Handling:** Displays informative messages for issues like missing permissions, disabled location services, network errors, or invalid city names.
+Current highlights:
+
+*   Splash screen
+*   Automatic GPS and manual city lookup
+*   Daily prayers (Fajr, Dhuhr, Asr, Maghrib, Isha) with per‑prayer time offsets
+*   Time format toggle (12/24h)
+*   Home screen widget: next prayer name + live countdown (updates every minute)
+*   Adhan at prayer time in the background via exact alarms (Android)
+*   High‑importance notification with STOP action when Adhan plays
+*   In‑app actions: Check Permissions, Test Adhan (1 min), Update Home Widget
+*   Per‑prayer Adhan enable/disable and audio selection; preview Test per prayer
+*   UTC‑based time handling for reliable next‑prayer logic across DST/timezones
+*   Provider state management with persistence (`shared_preferences`)
 
 ## Future Enhancements (Potential Ideas)
 
 *   Qibla Direction Compass
-*   Prayer Time Notifications / Adhan Alerts
-*   Hijri Calendar Display
-*   Monthly Prayer Times View
-*   Settings Screen (Calculation Method, Asr Juristic Method, Time Adjustments, Madhab)
-*   Improved UI/UX Themes (Light/Dark Mode)
-*   Offline Caching of Prayer Times
-*   Widget Support
+*   iOS widget extension
+*   Battery optimization and exact‑alarm deep links per OEM
+*   Offline caching of monthly prayer times
+*   More settings: Asr juristic method, advanced notification options
 
 ---
 
 ## Technology Stack & Key Dependencies
 
-*   **Framework:** Flutter (`sdk: flutter`)
-*   **Language:** Dart
-*   **State Management:** [`provider`](https://pub.dev/packages/provider) - For managing and listening to application state changes.
-*   **Location:** [`geolocator`](https://pub.dev/packages/geolocator) - For accessing device GPS and handling location permissions.
-*   **Networking:** [`http`](https://pub.dev/packages/http) - For making HTTP requests to the Al Adhan API.
-*   **Persistence:** [`shared_preferences`](https://pub.dev/packages/shared_preferences) - For storing user preferences (time format) and recent locations locally.
-*   **Date/Time Formatting:** [`intl`](https://pub.dev/packages/intl) - For formatting dates (for API requests) and times (for display).
-*   **Icons:** [`cupertino_icons`](https://pub.dev/packages/cupertino_icons) (Default Flutter dependency)
+*   Framework: Flutter
+*   Language: Dart
+*   State: [`provider`](https://pub.dev/packages/provider)
+*   Location: [`geolocator`](https://pub.dev/packages/geolocator)
+*   Networking: [`http`](https://pub.dev/packages/http)
+*   Persistence: [`shared_preferences`](https://pub.dev/packages/shared_preferences)
+*   Date/Time: [`intl`](https://pub.dev/packages/intl)
+*   Audio: [`just_audio`](https://pub.dev/packages/just_audio) (Adhan), [`audioplayers`](https://pub.dev/packages/audioplayers) (Quran)
+*   Notifications: [`flutter_local_notifications`](https://pub.dev/packages/flutter_local_notifications)
+*   Scheduling: [`android_alarm_manager_plus`](https://pub.dev/packages/android_alarm_manager_plus)
+*   Home widget bridge: [`home_widget`](https://pub.dev/packages/home_widget)
+*   Permissions: [`permission_handler`](https://pub.dev/packages/permission_handler)
 
 ---
 
@@ -55,8 +60,10 @@ salat_time/
 ├── lib/ # Main Dart code for the application
 │ ├── main.dart # App entry point, MaterialApp setup, Provider setup
 │ ├── splash_screen.dart # Implements the splash screen UI and navigation logic
-│ ├── home_screen.dart # Implements the main UI (input, recents, times display)
+│ ├── home_screen.dart # Main prayer UI with actions (Test Adhan, Check Permissions, Update Widget)
+│ ├── home_screen_new.dart # Alternative tabbed Home (Prayer/Quran)
 │ └── prayer_times_provider.dart # State management, business logic, API calls
+│ └── services/ # Audio, notifications, scheduling, widget data, permissions
 ├── test/ # Unit and widget tests (if any)
 ├── pubspec.yaml # Project metadata and dependencies
 └── README.md # This file
@@ -128,6 +135,14 @@ salat_time/
     *   `formatTime()`: Helper method using `intl` package to format a 24-hour time string (`HH:mm`) into either 12-hour (`h:mm a`) or 24-hour format based on the `_is24HourFormat` flag.
     *   `notifyListeners()`: Called whenever state changes that the UI needs to react to.
 
+### Background Adhan, Notifications, and Widget
+
+* `lib/services/prayer_time_scheduler.dart`: Schedules exact alarms for the five daily prayers and periodic widget refresh; background callback shows a high‑importance notification (with STOP action) then plays Adhan.
+* `lib/services/notification_service.dart`: Initializes and displays notifications; handles STOP action in foreground/background.
+* `lib/services/audio_service.dart`: Plays Adhan audio (per‑prayer enable and file selection); inline preview for Test buttons.
+* `lib/services/widget_data_service.dart`: Computes next prayer and persists UTC epoch/name/countdown for the widget; standardizes on UTC for reliability.
+* `android/app/src/main/java/.../NextPrayerWidgetProvider.java`: Android widget provider rendering and minute‑tick updates; reads saved UTC epoch and shows a live countdown.
+
 ---
 
 ## State Management Approach
@@ -167,14 +182,19 @@ This project uses the **`provider` package** for state management, specifically 
     ```bash
     flutter pub get
     ```
-4.  **Configure Permissions:**
-    *   **Android:** Edit `android/app/src/main/AndroidManifest.xml` and ensure the following permissions are present inside the `<manifest>` tag:
-        ```xml
-        <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-        <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-        <!-- Internet permission is usually implicit but good to have -->
-        <uses-permission android:name="android.permission.INTERNET"/>
-        ```
+4.  **Configure Permissions (Android):** Ensure these are declared in `android/app/src/main/AndroidManifest.xml`:
+    ```xml
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    ```
+    The app requests runtime notification permission. On Android 12+, enable "Exact alarms" for reliable background Adhan scheduling.
     *   **iOS:** Edit `ios/Runner/Info.plist` and add the following keys/strings inside the main `<dict>` tag:
         ```xml
         <key>NSLocationWhenInUseUsageDescription</key>
@@ -190,12 +210,46 @@ This project uses the **`provider` package** for state management, specifically 
     flutter run
     ```
 
+7.  **Adhan Audio Assets:** Declared in `pubspec.yaml` and bundled under:
+        ```
+        assets/audio/adhan/
+            ├─ adhan_default.mp3
+            ├─ adhan_makkah.mp3
+            ├─ adhan_madinah_archive.mp3
+            ├─ adhan_turkey.mp3
+            └─ adhan_fajr_zahrani.mp3
+        ```
+
 ---
 
 ## Configuration      
 
 *   **Location Permissions:** As detailed in the Setup section, ensure the necessary permissions are added to the native configuration files (`AndroidManifest.xml` and `Info.plist`). The app will request these permissions at runtime when location is needed.
-*   **Calculation Method:** The default calculation method is hardcoded (currently ISNA, ID=2) in `prayer_times_provider.dart`. This could be made configurable via a settings screen in the future.
+*   **Calculation Method:** Default is ISNA (2); configurable in Settings.
 *   **Asr Juristic Method (School):** The default is hardcoded (currently Standard, ID=0). This could also be made configurable.
 
 ---
+
+## Using the New Features
+
+### Home Widget
+* Shows next prayer and a live countdown.
+* Updates every minute; tap any widget text to open the app.
+* Menu → "Update Home Widget" to push an immediate refresh.
+
+### Background Adhan & Notification
+* The app schedules exact alarms for each prayer and plays Adhan even if the app is closed.
+* When a prayer triggers, a high‑importance notification appears first, then Adhan starts; tap STOP to stop playback.
+
+### Quick Test
+* AppBar menu → "Test Adhan (1 min)"; press Home. After ~1 minute you should see a notification and hear the Adhan.
+* Inline "Test" on each prayer row plays/stops a preview immediately while the app is open.
+
+### Time Handling (UTC)
+* All next‑prayer calculations and widget storage use UTC timestamps to avoid timezone/DST issues. Times are converted to local only for display.
+
+## Troubleshooting
+
+* Adhan only when app is open: Grant notification permission; on Android 12+ allow Exact alarms; disable battery optimization for the app; check media volume and DND.
+* Widget stuck on Fajr: Wait up to a minute or use "Update Home Widget"; ensure location is set; UTC handling prevents DST/timezone drift.
+* No notification sound: The app plays audio via `just_audio` and shows a notification without sound; use the STOP action to stop.

@@ -19,14 +19,8 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.7.0
+  sdk: '>=3.7.0-323.0.dev <4.0.0'
 
-# Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package dependencies to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
     sdk: flutter
@@ -35,8 +29,19 @@ dependencies:
   geolocator: ^11.0.0 # Or latest
   shared_preferences: ^2.2.2 # Or latest
   intl: ^0.19.0 # Or latest
-  # cupertino_icons: ^1.0.6 # Default
-  # Add these lines below the existing flutter dependency
+  hijri: ^3.0.0 # For Hijri calendar support
+  easy_date_timeline: ^1.0.0
+  quran: ^1.3.3
+  google_fonts: ^6.2.1
+  url_launcher: ^6.3.0
+  audioplayers: ^5.2.1
+  android_alarm_manager_plus: ^4.0.3
+  flutter_local_notifications: ^17.1.2
+  just_audio: ^0.9.36
+  home_widget: ^0.8.0
+  permission_handler: ^11.3.1
+  # Removed workmanager due to SDK constraints; using android_alarm_manager_plus for periodic updates
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -58,6 +63,44 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/audio/adhan/
+
+  # Custom fonts
+  fonts:
+    - family: UthmanTN
+      fonts:
+        - asset: assets/fonts/UthmanTN_v2-0.ttf
+          weight: 400
+        - asset: assets/fonts/UthmanTNB_v2-0.ttf
+          weight: 700
+    - family: KFGQPCAn
+      fonts:
+        - asset: assets/fonts/KFGQPCAnLight.ttf
+          weight: 300
+        - asset: assets/fonts/KFGQPCAnRegular.ttf
+          weight: 400
+        - asset: assets/fonts/KFGQPCAnBold.ttf
+          weight: 700
+    - family: KFGQPCKufiExt
+      fonts:
+        - asset: assets/fonts/KFGQPC-KufiExtV14.ttf
+          weight: 400
+    - family: KFGQPCKufiSty
+      fonts:
+        - asset: assets/fonts/KFGQPC-KufiStyV14.ttf
+          weight: 400
+    - family: KSA
+      fonts:
+        - asset: assets/fonts/KSARegular.ttf
+          weight: 400
+        - asset: assets/fonts/KSARegular_B.ttf
+          weight: 700
+    - family: KSAHeading
+      fonts:
+        - asset: assets/fonts/KSAHeading.ttf
+          weight: 700
 
   # To add assets to your application, add an assets section, like this:
   # assets:
